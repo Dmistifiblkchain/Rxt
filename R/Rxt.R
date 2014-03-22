@@ -36,10 +36,15 @@ nxt.convert.id <- function(id,from.db={require(gmp); any(as.bigz(id)<0)}) {
   n = as.bigz(2^63)
   id = as.bigz(id)
 
+  # Protect against fatal crash referencing empty bigz object
+  if (length(id)==0) return(id)
+  
   if (from.db) {
-    id[id<0]=id[id<0] + 2*n
+    I = !is.na(id) & id<0 # Careful with NA that occurs when BLOCK_ID is empty
+    id[I]=id[I] + 2*n
   } else {
-    id[id>n] = id[id>n] - 2*n
+    I = !is.na(id) & id>n
+    id[I] = id[I] - 2*n
   }
   
   return(id)
@@ -62,7 +67,7 @@ nxt.dbConnect <- function(file="nxt/nxt_db/nxt.h2.db",H2.opts=";DB_CLOSE_ON_EXIT
 nxt.dbDisconnect <- function(con)
   dbDisconnect(con)
 
-nxt.newAccounts.ts <- function(con,timestep="daily",ts.from.db=TRUE) {
+nxt.newAccountsTimeSeries <- function(con,timestep="daily",ts.from.db=TRUE) {
   if (is.character(timestep)) {
     hr=60*60
     timestep=c(hourly=hr,daily=24*hr,weekly=7*24*hr,monthly=30*24*hr,yearly=365*24*hr)[timestep]    
@@ -94,7 +99,7 @@ ORDER BY TIMESTAMP
 }
 
 nxt.getBlocks <- function(con,block.ids=NULL,generator.ids=NULL,start.ts=NULL,end.ts=NULL,
-                          start.height=NULL,end.height=NULL,nonzero.fee=TRUE,
+                          start.height=NULL,end.height=NULL,nonzero.fee=FALSE,
                           ts.from.db=TRUE,id.from.db=TRUE) {
   w="WHERE TRUE"
   
@@ -151,13 +156,241 @@ nxt.getBlocks <- function(con,block.ids=NULL,generator.ids=NULL,start.ts=NULL,en
   for(i in bigint.cols) b[,i] = as.bigz(b[,i])
   
   if (ts.from.db) {
-    b$TIMESTAMP = nxt.convert.ts(b$TIMESTAMP)
+    b$TIMESTAMP = nxt.convert.ts(b$TIMESTAMP,from.db=TRUE)
   }
 
   if (id.from.db) {
     id.cols = c("ID","PREVIOUS_BLOCK_ID","NEXT_BLOCK_ID","GENERATOR_ID")
-    for(i in id.cols) b[,i] = nxt.convert.id(b[,i])
+    for(i in id.cols) b[,i] = nxt.convert.id(b[,i],from.db=TRUE)
   }
+  
+  return(b)
+}
+
+nxt.getLastBlock <- function(con,nonzero.fee=FALSE) {
+  q="SELECT max(HEIGHT) FROM PUBLIC.BLOCK"
+  if (nonzero.fee)
+    paste(q,"WHERE TOTAL_FEE>0")
+  
+  h=dbGetQuery(con,q)
+  return(nxt.getBlocks(con,start.height=h,end.height=h))
+}
+
+nxt.getTransactions <- function(con,block.ids=NULL,sender.ids=NULL,recipient.ids=NULL,
+                                start.ts=NULL,end.ts=NULL,
+                                start.height=NULL,end.height=NULL,
+                                types=NULL,subtypes=NULL,
+                                min.amount=NULL,max.amount=NULL,
+                                min.fee=NULL,max.fee=NULL,
+                                ts.from.db=TRUE,id.from.db=TRUE) {
+  w="WHERE TRUE"
+  
+  if (!is.null(types)) {
+    types=paste(types,collapse=",")
+    w=paste(w," AND TYPE IN (",types,")",sep="")
+  }
+  
+  if (!is.null(subtypes)) {
+    subtypes=paste(subtypes,collapse=",")
+    w=paste(w," AND SUBTYPE IN (",subtypes,")",sep="")
+  }
+  
+  if (!is.null(block.ids)) {
+    block.ids=paste(nxt.convert.id(block.ids,from.db=FALSE),collapse=",")
+    w=paste(w," AND BLOCK_ID IN (",block.ids,")",sep="")
+  }
+  
+  if (!is.null(sender.ids)) {
+    sender.ids=paste(nxt.convert.id(sender.ids,from.db=FALSE),collapse=",")
+    w=paste(w," AND SENDER_ID IN (",sender.ids,")",sep="")
+  }
+  
+  if (!is.null(recipient.ids)) {
+    recipient.ids=paste(nxt.convert.id(recipient.ids,from.db=FALSE),collapse=",")
+    w=paste(w," AND RECIPIENT_ID IN (",recipient.ids,")",sep="")
+  }
+  
+  if (!is.null(start.ts)) {
+    start.ts=nxt.convert.ts(start.ts,from.db=FALSE)
+    w=paste(w," AND TIMESTAMP>=",start.ts,sep="")
+  }
+  
+  if (!is.null(end.ts)) {
+    end.ts=nxt.convert.ts(end.ts,from.db=FALSE)
+    w=paste(w," AND TIMESTAMP<=",end.ts,sep="")
+  }
+  
+  if (!is.null(start.height)) {
+    w=paste(w," AND HEIGHT>=",start.height,sep="")
+  }
+  
+  if (!is.null(end.height)) {
+    w=paste(w," AND HEIGHT<=",end.height,sep="")
+  }
+  
+  if (!is.null(min.amount)) {
+    w=paste(w," AND AMOUNT>=",min.amount,sep="")
+  }
+  
+  if (!is.null(max.amount)) {
+    w=paste(w," AND AMOUNT<=",max.amount,sep="")
+  }
+  
+  if (!is.null(min.fee)) {
+    w=paste(w," AND FEE>=",min.fee,sep="")
+  }
+  
+  if (!is.null(max.fee)) {
+    w=paste(w," AND FEE<=",max.fee,sep="")
+  }
+
+  b=dbGetQuery(con,paste("SELECT DB_ID, CAST(ID AS VARCHAR) AS ID,
+                         DEADLINE, SENDER_PUBLIC_KEY, 
+                         CAST(RECIPIENT_ID AS VARCHAR) AS RECIPIENT_ID,
+                         AMOUNT, FEE,
+                         CAST(REFERENCED_TRANSACTION_ID AS VARCHAR) AS REFERENCED_TRANSACTION_ID,
+                         HEIGHT, 
+                         CAST(BLOCK_ID AS VARCHAR) AS BLOCK_ID,
+                         SIGNATURE, TIMESTAMP, TYPE, SUBTYPE,
+                         CAST(SENDER_ID AS VARCHAR) AS SENDER_ID,
+                         ATTACHMENT
+                         FROM PUBLIC.TRANSACTION",w))
+
+  # Change factors back into character strings - there must be a way to avoid conversion to factor
+  I = sapply(b,class)=="factor"
+  b[,I] = sapply(b[,I],as.character)
+  
+  # At least convert IDs to BIGZ
+  require(gmp)
+  bigint.cols = c("ID","RECIPIENT_ID","SENDER_ID","REFERENCED_TRANSACTION_ID","BLOCK_ID")
+  for(i in bigint.cols) b[,i] = as.bigz(b[,i])
+  
+  if (ts.from.db) {
+    b$TIMESTAMP = nxt.convert.ts(b$TIMESTAMP,from.db=TRUE)
+  }
+  
+  if (id.from.db) {
+    id.cols = c("ID","RECIPIENT_ID","SENDER_ID","REFERENCED_TRANSACTION_ID","BLOCK_ID")
+    for(i in id.cols) b[,i] = nxt.convert.id(b[,i],from.db=TRUE)
+  }
+  
+  return(b)
+}
+
+nxt.getBalances <- function(con,account.ids=NULL,end.ts=NULL) {
+  w="WHERE TRUE"
+  
+  if (!is.null(end.ts)) {
+    end.ts=nxt.convert.ts(end.ts,from.db=FALSE)
+    w=paste(w," AND TIMESTAMP<=",end.ts,sep="")
+  }
+  
+  i=c("SENDER_ID","RECIPIENT_ID","GENERATOR_ID")
+  if (!is.null(account.ids)) {
+    account.ids=nxt.convert.id(account.ids,from.d=TRUE)
+    ids=paste(nxt.convert.id(account.ids,from.d=FALSE),collapse=",")
+    w=paste(w,"AND",i,"IN (",ids,")")
+  }
+  
+  a=c("-1*SUM(AMOUNT+FEE)","SUM(AMOUNT)","SUM(TOTAL_FEE)")
+  t=c("PUBLIC.TRANSACTION","PUBLIC.TRANSACTION","PUBLIC.BLOCK")
+  
+  tt=paste("nxtbalancetemp",1:3,sep="")
+  q=paste("CREATE LOCAL TEMPORARY TABLE",tt,"AS SELECT",i,"AS ID,",a,"AS AMOUNT FROM",t,w,"GROUP BY ID")
+  
+  for (n in 1:length(q)) {
+    dbSendUpdate(con,q[n])
+  }
+  
+  qq = paste("SELECT CAST(ID AS VARCHAR) AS ID, SUM(AMOUNT) AS BALANCE FROM (",
+             paste(paste("SELECT * FROM",tt),collapse=" UNION "),") t GROUP BY ID")
+
+  b=dbGetQuery(con,qq)
+
+  for (ttt in tt) {
+    dbSendUpdate(con,paste("DROP TABLE",ttt))
+  }
+  
+  b$ID=nxt.convert.id(as.character(b$ID),from.db=TRUE)
+  
+  if (is.null(account.ids)) account.ids=b$ID
+  
+  cc=data.frame(ACCOUNT_ID=as.character(account.ids),BALANCE=0,
+                stringsAsFactors=FALSE)
+  row.names(cc)=as.character(account.ids)
+  cc[as.character(b$ID),"BALANCE"]=b$BALANCE
+  cc$ACCOUNT_ID = as.bigz(cc$ACCOUNT_ID)
+  
+  return(cc)
+}
+
+nxt.getAccountsTimeSeries <- function(con,account.ids,start.ts=NULL,end.ts=NULL) {
+  i=c("SENDER_ID","RECIPIENT_ID","GENERATOR_ID")
+  t=c("PUBLIC.TRANSACTION","PUBLIC.TRANSACTION","PUBLIC.BLOCK")
+  a=c("AMOUNT","AMOUNT","0")
+  f=c("FEE","0","TOTAL_FEE")
+  as=c(-1,1,1)
+  fs=c(-1,1,1)
+  tt=c("'SEND'","'RECEIVE'","'FORGE'")
+  tty=c("TYPE","TYPE","NULL")
+  tsty=c("SUBTYPE","SUBTYPE","NULL")
+  
+  w=paste("WHERE",i,"IN (",
+          paste(nxt.convert.id(account.ids,from.db=FALSE),collapse=","),")")
+  
+  if (!is.null(start.ts)) {
+    start.ts=nxt.convert.ts(start.ts,from.db=FALSE)
+    w=paste(w," AND TIMESTAMP>=",start.ts,sep="")
+  }
+  
+  if (!is.null(end.ts)) {
+    end.ts=nxt.convert.ts(end.ts,from.db=FALSE)
+    w=paste(w," AND TIMESTAMP<=",end.ts,sep="")
+  }
+  
+  tempt=paste("nxatstemp",1:3,sep="")
+  q=paste("CREATE LOCAL TEMPORARY TABLE",tempt,
+          "AS SELECT",i,"AS ACCOUNT_ID, TIMESTAMP, ID AS TRANSACTION_ID,",
+          tt,"AS TRANSACTION_DIRECTION,",
+          tty,"AS TRANSACTION_TYPE,",
+          tsty,"AS TRANSACTION_SUBTYPE,",
+          as,"*",a,"AS AMOUNT,",
+          fs,"*",f,"AS FEE FROM",t,w)
+  
+  for (n in 1:length(q)) {
+    dbSendUpdate(con,q[n])
+  }
+  
+  qq = paste("SELECT CAST(ACCOUNT_ID AS VARCHAR) AS ACCOUNT_ID, TIMESTAMP,",
+             "CAST(TRANSACTION_ID AS VARCHAR) AS TRANSACTION_ID, TRANSACTION_DIRECTION,",
+             "TRANSACTION_TYPE, TRANSACTION_SUBTYPE, AMOUNT, FEE FROM (",
+             paste(paste("SELECT * FROM",tempt),collapse=" UNION "),
+             "AS t ORDER BY TIMESTAMP, ACCOUNT_ID")
+  
+  b = dbGetQuery(con,qq)
+
+  for (ttt in tempt) {
+    dbSendUpdate(con,paste("DROP TABLE",ttt))
+  }
+  
+  # Change factors back into character strings - there must be a way to avoid conversion to factor
+  I = sapply(b,class)=="factor"
+  b[,I] = sapply(b[,I],as.character)
+  
+  # At least convert IDs to BIGZ
+  require(gmp)
+  bigint.cols = c("ID","RECIPIENT_ID","SENDER_ID","REFERENCED_TRANSACTION_ID","BLOCK_ID")
+  for(i in bigint.cols) b[,i] = as.bigz(b[,i])
+  
+  if (ts.from.db) {
+    b$TIMESTAMP = nxt.convert.ts(b$TIMESTAMP,from.db=TRUE)
+  }
+  
+  if (id.from.db) {
+    id.cols = c("ID","RECIPIENT_ID","SENDER_ID","REFERENCED_TRANSACTION_ID","BLOCK_ID")
+    for(i in id.cols) b[,i] = nxt.convert.id(b[,i],from.db=TRUE)
+  }
+  
   
   return(b)
 }
