@@ -324,7 +324,8 @@ nxt.getBalances <- function(con,account.ids=NULL,end.ts=NULL) {
   return(cc)
 }
 
-nxt.getAccountsTimeSeries <- function(con,account.ids,start.ts=NULL,end.ts=NULL) {
+nxt.getAccountsTimeSeries <- function(con,account.ids,start.ts=NULL,end.ts=NULL,
+                                      ts.from.db=TRUE,id.from.db=TRUE,calc.balance=TRUE) {
   i=c("SENDER_ID","RECIPIENT_ID","GENERATOR_ID")
   t=c("PUBLIC.TRANSACTION","PUBLIC.TRANSACTION","PUBLIC.BLOCK")
   a=c("AMOUNT","AMOUNT","0")
@@ -334,6 +335,7 @@ nxt.getAccountsTimeSeries <- function(con,account.ids,start.ts=NULL,end.ts=NULL)
   tt=c("'SEND'","'RECEIVE'","'FORGE'")
   tty=c("TYPE","TYPE","NULL")
   tsty=c("SUBTYPE","SUBTYPE","NULL")
+  o=c("RECIPIENT_ID","SENDER_ID","NULL")
   
   w=paste("WHERE",i,"IN (",
           paste(nxt.convert.id(account.ids,from.db=FALSE),collapse=","),")")
@@ -354,19 +356,22 @@ nxt.getAccountsTimeSeries <- function(con,account.ids,start.ts=NULL,end.ts=NULL)
           tt,"AS TRANSACTION_DIRECTION,",
           tty,"AS TRANSACTION_TYPE,",
           tsty,"AS TRANSACTION_SUBTYPE,",
+          o,"AS OTHER_ACCOUNT_ID,",
           as,"*",a,"AS AMOUNT,",
           fs,"*",f,"AS FEE FROM",t,w)
-  
+
   for (n in 1:length(q)) {
     dbSendUpdate(con,q[n])
   }
   
   qq = paste("SELECT CAST(ACCOUNT_ID AS VARCHAR) AS ACCOUNT_ID, TIMESTAMP,",
              "CAST(TRANSACTION_ID AS VARCHAR) AS TRANSACTION_ID, TRANSACTION_DIRECTION,",
-             "TRANSACTION_TYPE, TRANSACTION_SUBTYPE, AMOUNT, FEE FROM (",
+             "TRANSACTION_TYPE, TRANSACTION_SUBTYPE,",
+             "CAST(OTHER_ACCOUNT_ID AS VARCHAR) AS OTHER_ACCOUNT_ID,",
+             " AMOUNT, FEE FROM (",
              paste(paste("SELECT * FROM",tempt),collapse=" UNION "),
-             "AS t ORDER BY TIMESTAMP, ACCOUNT_ID")
-  
+             ") AS t ORDER BY TIMESTAMP, ACCOUNT_ID")
+
   b = dbGetQuery(con,qq)
 
   for (ttt in tempt) {
@@ -376,10 +381,10 @@ nxt.getAccountsTimeSeries <- function(con,account.ids,start.ts=NULL,end.ts=NULL)
   # Change factors back into character strings - there must be a way to avoid conversion to factor
   I = sapply(b,class)=="factor"
   b[,I] = sapply(b[,I],as.character)
-  
+
   # At least convert IDs to BIGZ
   require(gmp)
-  bigint.cols = c("ID","RECIPIENT_ID","SENDER_ID","REFERENCED_TRANSACTION_ID","BLOCK_ID")
+  bigint.cols = c("ACCOUNT_ID","TRANSACTION_ID","OTHER_ACCOUNT_ID")
   for(i in bigint.cols) b[,i] = as.bigz(b[,i])
   
   if (ts.from.db) {
@@ -387,10 +392,12 @@ nxt.getAccountsTimeSeries <- function(con,account.ids,start.ts=NULL,end.ts=NULL)
   }
   
   if (id.from.db) {
-    id.cols = c("ID","RECIPIENT_ID","SENDER_ID","REFERENCED_TRANSACTION_ID","BLOCK_ID")
+    id.cols = c("ACCOUNT_ID","TRANSACTION_ID","OTHER_ACCOUNT_ID")
     for(i in id.cols) b[,i] = nxt.convert.id(b[,i],from.db=TRUE)
   }
   
+  if (calc.balance)
+    b$BALANCE=cumsum(b$AMOUNT+b$FEE)
   
   return(b)
 }
