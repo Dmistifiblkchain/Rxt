@@ -1,4 +1,4 @@
-nxt.genesis.ts <- as.POSIXct("2013-11-24 13:00:00",tz="UTC")
+nxt.genesis.ts <- as.POSIXct("2013-11-24 12:00:00",tz="UTC")
 
 is.POSIXt <- function(x)
   length(grep("^POSIX[lc]?t",class(x)))>0
@@ -163,6 +163,8 @@ nxt.getBlocks <- function(con,block.ids=NULL,generator.ids=NULL,start.ts=NULL,en
     id.cols = c("ID","PREVIOUS_BLOCK_ID","NEXT_BLOCK_ID","GENERATOR_ID")
     for(i in id.cols) b[,i] = nxt.convert.id(b[,i],from.db=TRUE)
   }
+
+  row.names(b)=as.character(b$ID)
   
   return(b)
 }
@@ -274,10 +276,12 @@ nxt.getTransactions <- function(con,block.ids=NULL,sender.ids=NULL,recipient.ids
     for(i in id.cols) b[,i] = nxt.convert.id(b[,i],from.db=TRUE)
   }
   
+  row.names(b)=as.character(b$ID)
+  
   return(b)
 }
 
-nxt.getBalances <- function(con,account.ids=NULL,end.ts=NULL) {
+nxt.getBalances <- function(con,account.ids=NULL,end.ts=NULL,id.from.db=TRUE) {
   w="WHERE TRUE"
   
   if (!is.null(end.ts)) {
@@ -287,8 +291,7 @@ nxt.getBalances <- function(con,account.ids=NULL,end.ts=NULL) {
   
   i=c("SENDER_ID","RECIPIENT_ID","GENERATOR_ID")
   if (!is.null(account.ids)) {
-    account.ids=nxt.convert.id(account.ids,from.d=TRUE)
-    ids=paste(nxt.convert.id(account.ids,from.d=FALSE),collapse=",")
+    ids=paste(nxt.convert.id(account.ids,from.db=FALSE),collapse=",")
     w=paste(w,"AND",i,"IN (",ids,")")
   }
   
@@ -302,7 +305,7 @@ nxt.getBalances <- function(con,account.ids=NULL,end.ts=NULL) {
     dbSendUpdate(con,q[n])
   }
   
-  qq = paste("SELECT CAST(ID AS VARCHAR) AS ID, SUM(AMOUNT) AS BALANCE FROM (",
+  qq = paste("SELECT CAST(ID AS VARCHAR) AS ACCOUNT_ID, SUM(AMOUNT) AS BALANCE FROM (",
              paste(paste("SELECT * FROM",tt),collapse=" UNION "),") t GROUP BY ID")
 
   b=dbGetQuery(con,qq)
@@ -311,14 +314,18 @@ nxt.getBalances <- function(con,account.ids=NULL,end.ts=NULL) {
     dbSendUpdate(con,paste("DROP TABLE",ttt))
   }
   
-  b$ID=nxt.convert.id(as.character(b$ID),from.db=TRUE)
+  b$ACCOUNT_ID=nxt.convert.id(as.character(b$ACCOUNT_ID),from.db=id.from.db)
   
-  if (is.null(account.ids)) account.ids=b$ID
+  if (is.null(account.ids)) {
+    row.names(b)=as.character(b$ACCOUNT_ID)  
+    return(b)
+  }
   
+  account.ids=nxt.convert.id(account.ids,from.db=id.from.db)
   cc=data.frame(ACCOUNT_ID=as.character(account.ids),BALANCE=0,
                 stringsAsFactors=FALSE)
   row.names(cc)=as.character(account.ids)
-  cc[as.character(b$ID),"BALANCE"]=b$BALANCE
+  cc[as.character(b$ACCOUNT_ID),"BALANCE"]=b$BALANCE
   cc$ACCOUNT_ID = as.bigz(cc$ACCOUNT_ID)
   
   return(cc)
@@ -401,3 +408,118 @@ nxt.getAccountsTimeSeries <- function(con,account.ids,start.ts=NULL,end.ts=NULL,
   
   return(b)
 }
+
+nxt.getAccountsStats <- function(con,account.ids=NULL,start.ts=NULL,end.ts=NULL,
+                                 ts.from.db=TRUE,id.from.db=TRUE,calc.balance=TRUE) {
+
+  w = rep("WHERE TRUE",3)
+  
+  if (!is.null(account.ids)) {
+    i=c("SENDER_ID","RECIPIENT_ID","GENERATOR_ID")
+    a=paste(nxt.convert.id(account.ids,from.db=FALSE),collapse=",")
+    w=paste(w,"AND",i,"IN (",a,")")
+  }
+  
+  if (!is.null(start.ts)) {
+    start.ts=nxt.convert.ts(start.ts,from.db=FALSE)
+    w=paste(w," AND TIMESTAMP>=",start.ts,sep="")
+  }
+  
+  if (!is.null(end.ts)) {
+    end.ts=nxt.convert.ts(end.ts,from.db=FALSE)
+    w=paste(w," AND TIMESTAMP<=",end.ts,sep="")
+  }
+  
+  q=paste("
+SELECT CAST(r.ACCOUNT_ID AS VARCHAR) AS ACCOUNT_ID,
+       N_REC, N_MESS_REC, N_MESS_SENDERS, NXT_REC, FIRST_REC, LAST_REC, N_TRANS, 
+       FEE_PAID, NXT_SENT,  
+       COALESCE(FIRST_SEND,-99999) AS FIRST_SEND, COALESCE(LAST_SEND,-99999) AS LAST_SEND,
+       N_SEND, N_MESS_SENT, N_MESS_RECIPIENTS, N_ALIAS_ASSIGNS, N_COLORED_TRANS,
+       N_FORGED, NONZERO_N_FORGED, FEE_FORGED, 
+       COALESCE(FIRST_FORGED,-99999) AS FIRST_FORGED, 
+       COALESCE(LAST_FORGED,-99999) AS LAST_FORGED,
+       COALESCE(NONZERO_FIRST_FORGED,-99999) AS NONZERO_FIRST_FORGED, 
+       COALESCE(NONZERO_LAST_FORGED,-99999) AS NONZERO_LAST_FORGED
+FROM
+(
+SELECT RECIPIENT_ID AS ACCOUNT_ID,
+       sum(TYPE=0) AS N_REC,
+       sum(TYPE=1 AND SUBTYPE=0) AS N_MESS_REC,
+       count(DISTINCT (CASE WHEN TYPE=1 AND SUBTYPE=0 THEN SENDER_ID ELSE NULL END)) AS N_MESS_SENDERS,
+       sum(AMOUNT) AS NXT_REC,
+       min(TIMESTAMP) AS FIRST_REC,
+       max(TIMESTAMP) AS LAST_REC
+FROM PUBLIC.TRANSACTION",w[2],"
+GROUP BY RECIPIENT_ID
+) AS r LEFT JOIN
+(
+SELECT SENDER_ID AS ACCOUNT_ID, 
+       count(*) AS N_TRANS,
+       sum(AMOUNT) AS NXT_SENT, 
+       sum(FEE) AS FEE_PAID,
+       min(TIMESTAMP) AS FIRST_SEND,
+       max(TIMESTAMP) AS LAST_SEND,
+       sum(TYPE=0) AS N_SEND,
+       sum(TYPE=1 AND SUBTYPE=0) AS N_MESS_SENT,
+       count(DISTINCT (CASE WHEN TYPE=1 AND SUBTYPE=0 THEN RECIPIENT_ID ELSE NULL END)) AS N_MESS_RECIPIENTS,
+       sum(TYPE=1 AND SUBTYPE=1) AS N_ALIAS_ASSIGNS,
+       sum(TYPE=2) AS N_COLORED_TRANS
+FROM PUBLIC.TRANSACTION",w[1]," 
+GROUP BY SENDER_ID
+) AS s ON r.ACCOUNT_ID=s.ACCOUNT_ID LEFT JOIN
+(
+SELECT GENERATOR_ID AS ACCOUNT_ID,
+       count(*) AS N_FORGED,
+       sum(TOTAL_FEE>0) AS NONZERO_N_FORGED,
+       sum(TOTAL_FEE) AS FEE_FORGED,
+       min(TIMESTAMP) AS FIRST_FORGED,
+       max(TIMESTAMP) AS LAST_FORGED,               
+       min(CASE WHEN TOTAL_FEE>0 THEN TIMESTAMP ELSE NULL END) AS NONZERO_FIRST_FORGED,
+       max(CASE WHEN TOTAL_FEE>0 THEN TIMESTAMP ELSE NULL END) AS NONZERO_LAST_FORGED
+FROM PUBLIC.BLOCK",w[3]," 
+GROUP BY GENERATOR_ID
+) AS g ON r.ACCOUNT_ID=g.ACCOUNT_ID
+ORDER BY r.ACCOUNT_ID
+")
+
+  b=dbGetQuery(con,q)
+  
+  # Replace -99999 with NaN
+  b[b==-99999]=NaN
+  
+  # Change factors back into character strings - there must be a way to avoid conversion to factor
+  I = sapply(b,class)=="factor"
+  b[,I] = sapply(b[,I],as.character)
+  
+  # At least convert IDs to BIGZ
+  require(gmp)
+  b$ACCOUNT_ID = as.bigz(b$ACCOUNT_ID)
+
+  b$FIRST_ACT = apply(b[,c("FIRST_REC","FIRST_SEND","FIRST_FORGED")],1,min,na.rm=TRUE)
+  b$LAST_ACT = apply(b[,c("LAST_REC","LAST_SEND","LAST_FORGED")],1,min,na.rm=TRUE)
+
+  if (ts.from.db) {
+    ts.cols = c("FIRST_REC","LAST_REC","FIRST_SEND","LAST_SEND",
+                "FIRST_FORGED","LAST_FORGED","FIRST_ACT","LAST_ACT",
+                "NONZERO_FIRST_FORGED","NONZERO_LAST_FORGED"
+                )
+    for(i in ts.cols) b[,i] = nxt.convert.ts(b[,i],from.db=TRUE)
+  }
+  b$TIME_ACT = b$LAST_ACT - b$FIRST_ACT # Units depends on ts.from.db
+  
+  if (id.from.db) {
+    b$ACCOUNT_ID = nxt.convert.id(b$ACCOUNT_ID,from.db=TRUE)
+  }
+  row.names(b)=as.character(b$ACCOUNT_ID)
+  
+  if (calc.balance)
+    b$BALANCE = b$NXT_REC - b$NXT_SENT - b$FEE_PAID + b$FEE_FORGED
+  
+  if (!is.null(account.ids) & dim(b)[1]!=length(account.ids))
+    warning("Data for some account IDs not found")
+  
+  return(b)
+}
+
+#nxt.getAliasesOwned <- function(con,account.ids=NULL,end.ts=NULL,id.from.db=TRUE) {}
