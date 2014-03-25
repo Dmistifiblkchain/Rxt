@@ -51,7 +51,7 @@ nxt.convert.id <- function(id,from.db={require(gmp); any(as.bigz(id)<0)}) {
 }
 
 nxt.dbConnect <- function(file="nxt/nxt_db/nxt.h2.db",H2.opts=";DB_CLOSE_ON_EXIT=FALSE;AUTO_SERVER=TRUE",
-                         H2.prefix="jdbc:h2:",username="sa",password="sa") {
+                         H2.prefix="jdbc:h2:",username="sa",password="sa",...) {
   require(RH2)
   
   # Remove possible file extension
@@ -61,7 +61,7 @@ nxt.dbConnect <- function(file="nxt/nxt_db/nxt.h2.db",H2.opts=";DB_CLOSE_ON_EXIT
   uri=paste(H2.prefix,paste(file,H2.opts,sep=""),sep="")
   
   # Make connection
-  return(dbConnect(H2(),uri,username,password))
+  return(dbConnect(H2(...),uri,username,password))
 }
 
 nxt.dbDisconnect <- function(con)
@@ -302,6 +302,7 @@ nxt.getBalances <- function(con,account.ids=NULL,end.ts=NULL,id.from.db=TRUE) {
   q=paste("CREATE LOCAL TEMPORARY TABLE",tt,"AS SELECT",i,"AS ID,",a,"AS AMOUNT FROM",t,w,"GROUP BY ID")
   
   for (n in 1:length(q)) {
+    dbSendUpdate(con,paste("DROP TABLE IF EXISTS",tt[n]))
     dbSendUpdate(con,q[n])
   }
   
@@ -414,10 +415,10 @@ nxt.getAccountsStats <- function(con,account.ids=NULL,start.ts=NULL,end.ts=NULL,
 
   w = rep("WHERE TRUE",3)
   
+  ii=c("SENDER_ID","RECIPIENT_ID","GENERATOR_ID")
   if (!is.null(account.ids)) {
-    i=c("SENDER_ID","RECIPIENT_ID","GENERATOR_ID")
     a=paste(nxt.convert.id(account.ids,from.db=FALSE),collapse=",")
-    w=paste(w,"AND",i,"IN (",a,")")
+    w=paste(w,"AND",ii,"IN (",a,")")
   }
   
   if (!is.null(start.ts)) {
@@ -430,6 +431,42 @@ nxt.getAccountsStats <- function(con,account.ids=NULL,start.ts=NULL,end.ts=NULL,
     w=paste(w," AND TIMESTAMP<=",end.ts,sep="")
   }
   
+  q=c(
+"SELECT SENDER_ID AS ACCOUNT_ID, 
+       count(*) AS N_TRANS,
+       sum(AMOUNT) AS NXT_SENT, 
+       sum(FEE) AS FEE_PAID,
+       min(TIMESTAMP) AS FIRST_SEND,
+       max(TIMESTAMP) AS LAST_SEND,
+       sum(TYPE=0) AS N_SEND,
+       sum(TYPE=1 AND SUBTYPE=0) AS N_MESS_SENT,
+       count(DISTINCT (CASE WHEN TYPE=1 AND SUBTYPE=0 THEN RECIPIENT_ID ELSE NULL END)) AS N_MESS_RECIPIENTS,
+       sum(TYPE=1 AND SUBTYPE=1) AS N_ALIAS_ASSIGNS,
+       sum(TYPE=2) AS N_COLORED_TRANS
+FROM PUBLIC.TRANSACTION",
+"SELECT RECIPIENT_ID AS ACCOUNT_ID,
+       sum(TYPE=0) AS N_REC,
+       sum(TYPE=1 AND SUBTYPE=0) AS N_MESS_REC,
+       count(DISTINCT (CASE WHEN TYPE=1 AND SUBTYPE=0 THEN SENDER_ID ELSE NULL END)) AS N_MESS_SENDERS,
+       sum(AMOUNT) AS NXT_REC,
+       min(TIMESTAMP) AS FIRST_REC,
+       max(TIMESTAMP) AS LAST_REC
+FROM PUBLIC.TRANSACTION",
+"SELECT GENERATOR_ID AS ACCOUNT_ID,
+       count(*) AS N_FORGED,
+       sum(TOTAL_FEE>0) AS NONZERO_N_FORGED,
+       sum(TOTAL_FEE) AS FEE_FORGED,
+       min(TIMESTAMP) AS FIRST_FORGED,
+       max(TIMESTAMP) AS LAST_FORGED,               
+       min(CASE WHEN TOTAL_FEE>0 THEN TIMESTAMP ELSE NULL END) AS NONZERO_FIRST_FORGED,
+       max(CASE WHEN TOTAL_FEE>0 THEN TIMESTAMP ELSE NULL END) AS NONZERO_LAST_FORGED
+FROM PUBLIC.BLOCK"      
+    )
+
+  tt = paste("RXTGASTEMP",1:3,sep="")
+  q=paste("CREATE LOCAL TEMPORARY TABLE",tt,"AS",q,w,"GROUP BY",ii)  
+  return(q)
+
   q=paste("
 SELECT CAST(r.ACCOUNT_ID AS VARCHAR) AS ACCOUNT_ID,
        N_REC, N_MESS_REC, N_MESS_SENDERS, NXT_REC, FIRST_REC, LAST_REC, N_TRANS, 
