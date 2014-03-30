@@ -470,31 +470,19 @@ nxt.getAccountsStats <- function(con,account.ids=NULL,start.ts=NULL,end.ts=NULL,
   q2=paste("CREATE UNIQUE INDEX",ttix,"ON",tt,"(ACCOUNT_ID)")
   
   for (n in 1:length(q)) {
+    dbSendUpdate(con,paste("DROP TABLE IF EXISTS",tt[n]))
     dbSendUpdate(con,q[n])
     dbSendUpdate(con,q2[n])
   }
 
   qq=paste(
     "SELECT CAST(r.ACCOUNT_ID AS VARCHAR) AS ACCOUNT_ID,
-       N_REC, N_MESS_REC, N_MESS_SENDERS, NXT_REC, FIRST_REC, LAST_REC, N_TRANS, 
-    FEE_PAID, NXT_SENT,  
-    COALESCE(FIRST_SEND,-99999) AS FIRST_SEND, COALESCE(LAST_SEND,-99999) AS LAST_SEND,
-    N_SEND, N_MESS_SENT, N_MESS_RECIPIENTS, N_ALIAS_ASSIGNS, N_COLORED_TRANS,
-    N_FORGED, NONZERO_N_FORGED, FEE_FORGED, 
-    COALESCE(FIRST_FORGED,-99999) AS FIRST_FORGED, 
-    COALESCE(LAST_FORGED,-99999) AS LAST_FORGED,
-    COALESCE(NONZERO_FIRST_FORGED,-99999) AS NONZERO_FIRST_FORGED, 
-    COALESCE(NONZERO_LAST_FORGED,-99999) AS NONZERO_LAST_FORGED
-    FROM",tt[2],"AS r LEFT JOIN",tt[1],"AS s ON r.ACCOUNT_ID=s.ACCOUNT_ID LEFT JOIN",
-    tt[3],"AS g ON r.ACCOUNT_ID=g.ACCOUNT_ID ORDER BY r.ACCOUNT_ID
-    ")
-  qq=paste(
-    "SELECT CAST(r.ACCOUNT_ID AS VARCHAR) AS ACCOUNT_ID,
-    N_REC, N_MESS_REC, N_MESS_SENDERS, NXT_REC, FIRST_REC, LAST_REC, N_TRANS, 
-    FEE_PAID, NXT_SENT,  
+    N_REC, N_MESS_REC, N_MESS_SENDERS, COALESCE(NXT_REC,0) AS NXT_REC, 
+    FIRST_REC, LAST_REC, N_TRANS, 
+    COALESCE(FEE_PAID,0) AS FEE_PAID, COALESCE(NXT_SENT,0) AS NXT_SENT,  
     FIRST_SEND, LAST_SEND,
     N_SEND, N_MESS_SENT, N_MESS_RECIPIENTS, N_ALIAS_ASSIGNS, N_COLORED_TRANS,
-    N_FORGED, NONZERO_N_FORGED, FEE_FORGED, 
+    N_FORGED, NONZERO_N_FORGED, COALESCE(FEE_FORGED,0) AS FEE_FORGED, 
     FIRST_FORGED, 
     LAST_FORGED,
     NONZERO_FIRST_FORGED, 
@@ -502,15 +490,13 @@ nxt.getAccountsStats <- function(con,account.ids=NULL,start.ts=NULL,end.ts=NULL,
     FROM",tt[2],"AS r LEFT JOIN",tt[1],"AS s ON r.ACCOUNT_ID=s.ACCOUNT_ID LEFT JOIN",
     tt[3],"AS g ON r.ACCOUNT_ID=g.ACCOUNT_ID ORDER BY r.ACCOUNT_ID
     ")
+
   b = dbGetQuery(con,qq)
   
-  for (ttt in tt) {
-    dbSendUpdate(con,paste("DROP TABLE IF EXISTS",ttt))
+  for (n in 1:length(q)) {
+    dbSendUpdate(con,paste("DROP TABLE IF EXISTS",tt[n]))
   }
 
-  # Replace -99999 with NaN
-  b[b==-99999]=NaN
-  
   # Change factors back into character strings - there must be a way to avoid conversion to factor
   I = sapply(b,class)=="factor"
   b[,I] = sapply(b[,I],as.character)
@@ -518,7 +504,7 @@ nxt.getAccountsStats <- function(con,account.ids=NULL,start.ts=NULL,end.ts=NULL,
   # At least convert IDs to BIGZ
   require(gmp)
   b$ACCOUNT_ID = as.bigz(b$ACCOUNT_ID)
-
+  
   b$FIRST_ACT = apply(b[,c("FIRST_REC","FIRST_SEND","FIRST_FORGED")],1,min,na.rm=TRUE)
   b$LAST_ACT = apply(b[,c("LAST_REC","LAST_SEND","LAST_FORGED")],1,min,na.rm=TRUE)
 
