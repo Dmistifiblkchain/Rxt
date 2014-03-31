@@ -1,23 +1,3 @@
-#' Functions for analyzing the H2 database containing the NXT blockchain
-#' 
-#' This package contains a series of R functions for accessing and analyzing
-#' data in the  NXT blockchain, which is stored in a H2 (java) database.  To use
-#' this package, one must either connect to a copy of the H2 database that is
-#' not in active use by the (NXT) NRS Client or instruct the NRS client to open
-#' the database with the AUTO_SERVER=TRUE option using the nxt.dbUrl property.
-#' 
-#' \tabular{ll}{ Package: \tab Rxt\cr Type: \tab Package\cr Version:
-#' \tab 0.1\cr Date: \tab 2014-03-31\cr License: \tab GPL (>= 2)\cr }
-#' 
-#' @author David M. Kaplan \email{dmkaplan2000@@gmail.com}
-#' 
-#' Maintainer: David M. Kaplan \email{dmkaplan2000@@gmail.com}
-#' @name Rxt
-#' @docType package
-#' @title Functions for analyzing the H2 database containing the NXT blockchain
-#' @keywords package
-NULL
-
 #' Timestamp of NXT genesis block in POSIXct format
 #'   
 #' @seealso See also \code{\link{nxt.convert.ts}}
@@ -662,6 +642,7 @@ nxt.getAccountsTimeSeries <- function(con,account.ids,start.ts=NULL,end.ts=NULL,
           fs,"*",f,"AS FEE FROM",t,w)
 
   for (n in 1:length(q)) {
+    dbSendUpdate(con,paste("DROP TABLE IF EXISTS",tempt[n]))
     dbSendUpdate(con,q[n])
   }
   
@@ -703,6 +684,101 @@ nxt.getAccountsTimeSeries <- function(con,account.ids,start.ts=NULL,end.ts=NULL,
   return(b)
 }
 
+#' Get summary account activity statistics for a set of NXT accounts
+#' 
+#' This function queries the NXT blockchain and returns summary statistics 
+#' regarding transactions and forging for a set of NXT accounts for a given time
+#' period.
+#' 
+#' @param con Connection object to the NXT H2 database.
+#' @param account.ids A vector with NXT IDs of accounts to look for. Defaults to
+#'   calculating statistics for all accounts.
+#' @param start.ts Minimum timestamp of transactions and blocks. Can be in 
+#'   seconds since genesis or POSIXct format. Defaults to start of NXT 
+#'   blockchain.
+#' @param end.ts Maximum timestamp of transactions and blocks. Can be in seconds
+#'   since genesis or POSIXct format. Defaults to end of NXT blockchain.
+#' @param ts.from.db Boolean. If \code{TRUE} (default), convert timestamps to 
+#'   POSIXct, otherwise keep them in seconds since genesis block.
+#' @param id.from.db Boolean. If \code{TRUE} (default), output block and account
+#'   IDs in canonical NXT format, otherwise leave in signed long format.
+#' @param calc.balance Boolean. If \code{TRUE} (default), a balance will be 
+#'   calculated for each account. This balance will only reflect transactions 
+#'   occuring between \code{start.ts} and \code{end.ts}.
+#'   
+#' @return A data.frame with the following columns corresponding to statistics 
+#'   for a given set of account IDs over a given time period: 
+#'   \item{ACCOUNT_ID}{NXT account ID from list given in \code{account.ids}}
+#'   
+#'   \item{N_REC}{Number of times account received NXT}
+#'   
+#'   \item{N_MESS_REC}{Number of messages received by account}
+#'   
+#'   \item{N_MESS_SENDERS}{Number of distinct accounts sending messages to this 
+#'   account}
+#'   
+#'   \item{NXT_REC}{Amount of NXT sent to this account}
+#'   
+#'   \item{FIRST_REC}{Timestamp of first transaction received by account}
+#'   
+#'   \item{LAST_REC}{Timestamp of last NXT transfer to this account}
+#'   
+#'   \item{N_TRANS}{Total number of transactions of all types sent by this 
+#'   account}
+#'   
+#'   \item{FEE_PAID}{Total fee paid by this count for sending transactions}
+#'   
+#'   \item{NXT_SENT}{Amount of NXT sent from this account}
+#'   
+#'   \item{FIRST_SEND}{Timestamp of first time NXT sent from this account}
+#'   
+#'   \item{LAST_SEND}{Timestamp of last time NXT sent from this account}
+#'   
+#'   \item{N_SEND}{Number of times NXT sent from this account}
+#'   
+#'   \item{N_MESS_SENT}{Number of messages sent from this account}
+#'   
+#'   \item{N_MESS_RECIPIENTS}{Number of distinct message recipients among 
+#'   messages sent from this account}
+#'   
+#'   \item{N_ALIAS_ASSIGNS}{Number of alias assignment transactions sent by this
+#'   account. Not necessarily all alias transactions correspond to different NXT
+#'   aliases}
+#'   
+#'   \item{N_COLORED_TRANS}{Number of colored coin transactions sent by this 
+#'   account}
+#'   
+#'   \item{N_FORGED}{Number of blocks forged by this account}
+#'   
+#'   \item{NONZERO_N_FORGED}{Number of blocks forged by this account with 
+#'   nonzero fee}
+#'   
+#'   \item{FEE_FORGED}{Amount of NXT forged by this account}
+#'   
+#'   \item{FIRST_FORGED}{Timestamp of first block forged by this account}
+#'   
+#'   \item{LAST_FORGED}{Timestamp of last block forged by this account}
+#'   
+#'   \item{NONZERO_FIRST_FORGED}{Timestamp of first block forged by this account
+#'   with nonzero fee}
+#'   
+#'   \item{NONZERO_LAST_FORGED}{Timestamp of last block forged by this account 
+#'   with nonzero fee}
+#'   
+#'   \item{FIRST_ACT}{Timestamp of first account activity}
+#'   
+#'   \item{LAST_ACT}{Timestamp of first account activity}
+#'   
+#'   \item{TIME_ACT}{Difference between \code{FIRST_ACT} and \code{LAST_ACT}}
+#'   
+#'   \item{BALANCE}{Balance of account for time period examined (only if 
+#'   \code{calc.balance=TRUE})}
+#'   
+#' @seealso See also \code{\link{nxt.dbConnect}}, \code{\link{nxt.convert.ts}}, 
+#'   \code{\link{nxt.convert.id}}
+#'   
+#' @author David M. Kaplan \email{dmkaplan2000@@gmail.com}
+#' @export
 nxt.getAccountsStats <- function(con,account.ids=NULL,start.ts=NULL,end.ts=NULL,
                                  ts.from.db=TRUE,id.from.db=TRUE,calc.balance=TRUE) {
 
@@ -824,8 +900,21 @@ nxt.getAccountsStats <- function(con,account.ids=NULL,start.ts=NULL,end.ts=NULL,
   return(b)
 }
 
-#nxt.getAliasesOwned <- function(con,account.ids=NULL,end.ts=NULL,id.from.db=TRUE) {}
 
+#' Converts hex strings to raw R objects
+#' 
+#' Converts hex strings (e.g., "ac6fef") to a \code{\link{raw}} R object
+#' 
+#' @param s Single hex string. Use \code{\link{apply}} or \code{\link{sapply}} 
+#'   to work with vectors of hex strings
+#'   
+#' @return Raw R object corresponding to hex string
+#'   
+#' @seealso See also \code{\link{raw}}, \code{\link{rawToChar}},
+#'   \code{\link{RawToHexString}}
+#'   
+#' @author David M. Kaplan \email{dmkaplan2000@@gmail.com}
+#' @export
 HexStringToRaw <- function(s) {
   n = nchar(s)/2
   x = raw(length=n)
@@ -835,4 +924,17 @@ HexStringToRaw <- function(s) {
   return(x)
 }
 
+#' Converts raw R objects to hex string
+#' 
+#' Converts a \code{\link{raw}} R object to a hex strings (e.g., "ac6fef")
+#' 
+#' @param x Object of type \code{\link{raw}}
+#'   
+#' @return Hex string corresponding to raw object
+#'   
+#' @seealso See also \code{\link{raw}}, \code{\link{rawToChar}},
+#'   \code{\link{HexStringToRaw}}
+#'   
+#' @author David M. Kaplan \email{dmkaplan2000@@gmail.com}
+#' @export
 RawToHexString <- function(x) { paste(as.character(x),collapse="") }
