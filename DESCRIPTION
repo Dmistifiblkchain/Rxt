@@ -20,5 +20,4 @@ Suggests:
     reshape2,
     ineq,
     grid
-License: David M. Kaplan (2014).  Not to be used without permission from the
-    author.
+License: GPL (>= 2)

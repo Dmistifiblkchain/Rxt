@@ -1,6 +1,6 @@
 #' Timestamp of NXT genesis block in POSIXct format
 #'   
-#' @seealso See also \code{\link{nxt.convert.ts}}
+#' @seealso \code{\link{nxt.convert.ts}}
 #' 
 #' @author David M. Kaplan \email{dmkaplan2000@@gmail.com}
 #' @export
@@ -71,16 +71,18 @@ nxt.convert.ts <- function(ts,tz="UTC",from.db=length(grep("^(character|POSIX[lc
 #' converted to strings to avoid loss of precision, but IDs are not converted by
 #' the database to the canonical unsigned long format used by NXT. This function
 #' converts IDs back and forth between unsigned and signed long using 
-#' \code{\link{bigz}} objects from the \link[bigz]{gmp} package.
+#' \code{\link[gmp]{bigz}} objects from the gmp package.
 #' 
 #' @param id a vector of NXT ids.  Can be of any type that can be converted to
-#'   \code{\link{bigz}}.
+#'   \code{\link[gmp]{bigz}}.
 #' @param from.db Boolean. If true, try to convert \code{id} to canonical
 #'   unsigned long NXT ID format. If false, converts from unsigned long to
 #'   signed long. By default, will try to automatically convert from the
 #'   presumed input format to the other.
 #'   
 #' @return A vector of IDs in the desired format.
+#'   
+#' @seealso \code{\link[gmp]{bigz}}
 #'   
 #' @author David M. Kaplan \email{dmkaplan2000@@gmail.com}
 #' @export
@@ -111,23 +113,25 @@ nxt.convert.id <- function(id,from.db={require(gmp); any(as.bigz(id)<0)}) {
 #' Make a connection to the NXT H2 database containing the blockchain
 #' 
 #' Recent versions of the NRS NXT client store the blockchain in a H2 database. 
-#' This function facilitates connecting to this database using the 
-#' \link[H2]{RH2} package. This requires \link[H2]{RH2} >= 0.2 and NRS client >= 0.8. If
-#' you want to connect to the NXT H2 database while running the NRS client, then
-#' one must instruct the NRS client to open the database with the
-#' AUTO_SERVER=TRUE option using the 'nxt.dbUrl' config property.
+#' This function facilitates connecting to this database using the RH2 package.
+#' This requires RH2 >= 0.2 and NRS client >= 0.8. If you want to connect to the
+#' NXT H2 database while running the NRS client, then one must instruct the NRS
+#' client to open the database with the AUTO_SERVER=TRUE option using the
+#' 'nxt.dbUrl' config property.
 #' 
 #' @param file Full path to the file containing the NXT H2 database.
-#' @param H2.opts Configuration options for the H2 connection.  Defaults to ";DB_CLOSE_ON_EXIT=FALSE;AUTO_SERVER=TRUE".
+#' @param H2.opts Configuration options for the H2 connection.  Defaults to
+#'   ";DB_CLOSE_ON_EXIT=FALSE;AUTO_SERVER=TRUE".
 #' @param H2.prefix In general, don't touch. Defaults to "jdbc:h2:".
 #' @param username In general, don't touch. Defaults to "sa".
 #' @param password In general, don't touch. Defaults to "sa".
-#' @param \dots Further arguments to the \code{\link{H2}} driver function (e.g., jars).
+#' @param \dots Further arguments to the \code{\link[RH2]{H2}} driver function
+#'   (e.g., jars).
 #'   
 #' @return An H2 DB connection object
 #'   
-#' @seealso See also \code{\link{nxt.dbDisconnect}}
-#'
+#' @seealso \code{\link{nxt.dbDisconnect}}, \code{\link[RH2]{H2}}
+#'   
 #' @author David M. Kaplan \email{dmkaplan2000@@gmail.com}
 #' @export
 nxt.dbConnect <- function(file="nxt/nxt_db/nxt.h2.db",H2.opts=";DB_CLOSE_ON_EXIT=FALSE;AUTO_SERVER=TRUE",
@@ -147,13 +151,13 @@ nxt.dbConnect <- function(file="nxt/nxt_db/nxt.h2.db",H2.opts=";DB_CLOSE_ON_EXIT
 
 #' Disconnect from NXT H2 database
 #' 
-#' Currently just a wrapper for \code{\link{dbDisconnect}}.
+#' Currently just a wrapper for \code{[\link[DBI]{dbDisconnect}}.
 #' 
 #' @param con H2 connection object
 #'   
 #' @return Boolean indicating success of operation
 #'   
-#' @seealso See also \code{\link{nxt.dbConnect}}
+#' @seealso \code{\link{nxt.dbConnect}}
 #'   
 #' @author David M. Kaplan \email{dmkaplan2000@@gmail.com}
 #' @export
@@ -180,7 +184,7 @@ nxt.dbDisconnect <- function(con)
 #'   
 #' \item{D_ACCOUNT}{Number of new NXT accounts created during the timestep}
 #'   
-#' @seealso See also \code{\link{nxt.dbConnect}}, \code{\link{nxt.convert.ts}} 
+#' @seealso \code{\link{nxt.dbConnect}}, \code{\link{nxt.convert.ts}} 
 #'   
 #' @author David M. Kaplan \email{dmkaplan2000@@gmail.com}
 #' @export
@@ -240,7 +244,7 @@ ORDER BY TIMESTAMP
 #' @return A data.frame with exactly the same information as is found in the 
 #'   BLOCK table found in the NXT H2 database.
 #'   
-#' @seealso See also \code{\link{nxt.dbConnect}}, \code{\link{nxt.convert.ts}},
+#' @seealso \code{\link{nxt.dbConnect}}, \code{\link{nxt.convert.ts}},
 #'   \code{\link{nxt.convert.id}}
 #'   
 #' @author David M. Kaplan \email{dmkaplan2000@@gmail.com}
@@ -329,7 +333,7 @@ nxt.getBlocks <- function(con,block.ids=NULL,generator.ids=NULL,start.ts=NULL,en
 #' @return A data.frame with exactly the same information as is found in the 
 #'   BLOCK table found in the NXT H2 database.
 #'   
-#' @seealso See also \code{\link{nxt.dbConnect}}, \code{\link{nxt.convert.ts}}, 
+#' @seealso \code{\link{nxt.dbConnect}}, \code{\link{nxt.convert.ts}}, 
 #'   \code{\link{nxt.convert.id}}, \code{\link{nxt.getBlocks}}
 #'   
 #' @author David M. Kaplan \email{dmkaplan2000@@gmail.com}
@@ -374,7 +378,7 @@ nxt.getLastBlock <- function(con,nonzero.fee=FALSE,...) {
 #' @return A data.frame with exactly the same information as is found in the 
 #'   TRANSACTION table found in the NXT H2 database.
 #'   
-#' @seealso See also \code{\link{nxt.dbConnect}}, \code{\link{nxt.convert.ts}}, 
+#' @seealso \code{\link{nxt.dbConnect}}, \code{\link{nxt.convert.ts}}, 
 #'   \code{\link{nxt.convert.id}}
 #'   
 #' @author David M. Kaplan \email{dmkaplan2000@@gmail.com}
@@ -500,7 +504,7 @@ nxt.getTransactions <- function(con,block.ids=NULL,sender.ids=NULL,recipient.ids
 #'   
 #' @return A data.frame with two columns: ACCOUNT_ID and BALANCE
 #'   
-#' @seealso See also \code{\link{nxt.dbConnect}}, \code{\link{nxt.convert.id}}
+#' @seealso \code{\link{nxt.dbConnect}}, \code{\link{nxt.convert.id}}
 #'   
 #' @author David M. Kaplan \email{dmkaplan2000@@gmail.com}
 #' @export
@@ -600,7 +604,7 @@ nxt.getBalances <- function(con,account.ids=NULL,ts=NULL,id.from.db=TRUE) {
 #'   \item{BALANCE}{Cumsum of \code{AMOUNT+FEE} for all transaction (only if
 #'   \code{calc.balance=TRUE})}
 #'   
-#' @seealso See also \code{\link{nxt.dbConnect}}, \code{\link{nxt.convert.ts}}, 
+#' @seealso \code{\link{nxt.dbConnect}}, \code{\link{nxt.convert.ts}}, 
 #'   \code{\link{nxt.convert.id}}
 #'   
 #' @author David M. Kaplan \email{dmkaplan2000@@gmail.com}
@@ -774,7 +778,7 @@ nxt.getAccountsTimeSeries <- function(con,account.ids,start.ts=NULL,end.ts=NULL,
 #'   \item{BALANCE}{Balance of account for time period examined (only if 
 #'   \code{calc.balance=TRUE})}
 #'   
-#' @seealso See also \code{\link{nxt.dbConnect}}, \code{\link{nxt.convert.ts}}, 
+#' @seealso \code{\link{nxt.dbConnect}}, \code{\link{nxt.convert.ts}}, 
 #'   \code{\link{nxt.convert.id}}
 #'   
 #' @author David M. Kaplan \email{dmkaplan2000@@gmail.com}
@@ -910,7 +914,7 @@ nxt.getAccountsStats <- function(con,account.ids=NULL,start.ts=NULL,end.ts=NULL,
 #'   
 #' @return Raw R object corresponding to hex string
 #'   
-#' @seealso See also \code{\link{raw}}, \code{\link{rawToChar}},
+#' @seealso \code{\link{raw}}, \code{\link{rawToChar}},
 #'   \code{\link{RawToHexString}}
 #'   
 #' @author David M. Kaplan \email{dmkaplan2000@@gmail.com}
@@ -932,7 +936,7 @@ HexStringToRaw <- function(s) {
 #'   
 #' @return Hex string corresponding to raw object
 #'   
-#' @seealso See also \code{\link{raw}}, \code{\link{rawToChar}},
+#' @seealso \code{\link{raw}}, \code{\link{rawToChar}},
 #'   \code{\link{HexStringToRaw}}
 #'   
 #' @author David M. Kaplan \email{dmkaplan2000@@gmail.com}
