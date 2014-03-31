@@ -1,8 +1,65 @@
+#' Functions for analyzing the H2 database containing the NXT blockchain
+#' 
+#' This package contains a series of R functions for accessing and analyzing
+#' data in the  NXT blockchain, which is stored in a H2 (java) database.  To use
+#' this package, one must either connect to a copy of the H2 database that is
+#' not in active use by the (NXT) NRS Client or instruct the NRS client to open
+#' the database with the AUTO_SERVER=TRUE option using the nxt.dbUrl property.
+#' 
+#' \tabular{ll}{ Package: \tab Rxt\cr Type: \tab Package\cr Version:
+#' \tab 0.1\cr Date: \tab 2014-03-31\cr License: \tab GPL (>= 2)\cr }
+#' 
+#' @author David M. Kaplan \email{dmkaplan2000@@gmail.com}
+#' 
+#' Maintainer: David M. Kaplan \email{dmkaplan2000@@gmail.com}
+#' @name Rxt
+#' @docType package
+#' @title Functions for analyzing the H2 database containing the NXT blockchain
+#' @keywords package
+NULL
+
+#' Timestamp of NXT genesis block in POSIXct format
+#'   
+#' @seealso See also \code{\link{nxt.convert.ts}}
+#' 
+#' @author David M. Kaplan \email{dmkaplan2000@@gmail.com}
+#' @export
 nxt.genesis.ts <- as.POSIXct("2013-11-24 12:00:00",tz="UTC")
 
+#' Test if an object is of class POSIXct or POSIXlt or POSIXt
+#' 
+#' @param x Any R object
+#'   
+#' @return Returns TRUE if object is of class POSIXct or POSIXlt or POSIXt
+#'   
+#' @author David M. Kaplan \email{dmkaplan2000@@gmail.com}
 is.POSIXt <- function(x)
   length(grep("^POSIX[lc]?t",class(x)))>0
 
+#' Convert timestamps back and forth between seconds since genesis and POSIXct
+#' 
+#' Timestamps are stored internally in the NXT H2 database in units of seconds 
+#' since the genesis block. This function converts back and forth between the 
+#' internal format and POSIXct timestamp objects. If the function is not 
+#' explicitly told which direction to convert to it will try to automatically 
+#' determine the correct direction based on inputs.
+#' 
+#' @param ts a vector of timestamp values.  Can be numeric, in which case values
+#'   are assumed to reprsent seconds since genesis block; POSIX timestamp 
+#'   objects; or character, which is converted to POSIXct
+#' @param tz timezone to use when converting character to POSIXct.  Defaults to 
+#'   "UTC"
+#' @param from.db Boolean. If true, try to convert \code{ts} into POSIXct. If 
+#'   false, tries to convert into seconds since the genesis block. By default, 
+#'   will try to automatically convert numeric into POSIXct and all others into 
+#'   numeric (seconds since genesis).
+#' @param genesis.ts timestamp of genesis block in POSIXct format. Defaults to
+#'   \code{\link{nxt.genesis.ts}}.
+#'   
+#' @return A vector of timestamps in the desired format.
+#'   
+#' @author David M. Kaplan \email{dmkaplan2000@@gmail.com}
+#' @export
 nxt.convert.ts <- function(ts,tz="UTC",from.db=length(grep("^(character|POSIX[lc]?t)",class(ts)))==0,genesis.ts=nxt.genesis.ts) {
 
   # The above default for from.db will try to automatically determine which direction we want to convert
@@ -26,6 +83,27 @@ nxt.convert.ts <- function(ts,tz="UTC",from.db=length(grep("^(character|POSIX[lc
   return(ts)
 }
 
+#' Convert NXT IDs between internal H2 DB format and canonical unsigned long 
+#' format
+#' 
+#' NXT IDs (e.g., for accounts or transactions or blocks) are stored internally 
+#' in the NXT H2 database as signed long. When querying the database, these are 
+#' converted to strings to avoid loss of precision, but IDs are not converted by
+#' the database to the canonical unsigned long format used by NXT. This function
+#' converts IDs back and forth between unsigned and signed long using 
+#' \code{\link{bigz}} objects from the \link[bigz]{gmp} package.
+#' 
+#' @param id a vector of NXT ids.  Can be of any type that can be converted to
+#'   \code{\link{bigz}}.
+#' @param from.db Boolean. If true, try to convert \code{id} to canonical
+#'   unsigned long NXT ID format. If false, converts from unsigned long to
+#'   signed long. By default, will try to automatically convert from the
+#'   presumed input format to the other.
+#'   
+#' @return A vector of IDs in the desired format.
+#'   
+#' @author David M. Kaplan \email{dmkaplan2000@@gmail.com}
+#' @export
 nxt.convert.id <- function(id,from.db={require(gmp); any(as.bigz(id)<0)}) {
   
   # The above default for from.db will try to automatically determine which direction we want to convert
@@ -50,6 +128,28 @@ nxt.convert.id <- function(id,from.db={require(gmp); any(as.bigz(id)<0)}) {
   return(id)
 }
 
+#' Make a connection to the NXT H2 database containing the blockchain
+#' 
+#' Recent versions of the NRS NXT client store the blockchain in a H2 database. 
+#' This function facilitates connecting to this database using the 
+#' \link[H2]{RH2} package. This requires \link[H2]{RH2} >= 0.2 and NRS client >= 0.8. If
+#' you want to connect to the NXT H2 database while running the NRS client, then
+#' one must instruct the NRS client to open the database with the
+#' AUTO_SERVER=TRUE option using the 'nxt.dbUrl' config property.
+#' 
+#' @param file Full path to the file containing the NXT H2 database.
+#' @param H2.opts Configuration options for the H2 connection.  Defaults to ";DB_CLOSE_ON_EXIT=FALSE;AUTO_SERVER=TRUE".
+#' @param H2.prefix In general, don't touch. Defaults to "jdbc:h2:".
+#' @param username In general, don't touch. Defaults to "sa".
+#' @param password In general, don't touch. Defaults to "sa".
+#' @param \dots Further arguments to the \code{\link{H2}} driver function (e.g., jars).
+#'   
+#' @return An H2 DB connection object
+#'   
+#' @seealso See also \code{\link{nxt.dbDisconnect}}
+#'
+#' @author David M. Kaplan \email{dmkaplan2000@@gmail.com}
+#' @export
 nxt.dbConnect <- function(file="nxt/nxt_db/nxt.h2.db",H2.opts=";DB_CLOSE_ON_EXIT=FALSE;AUTO_SERVER=TRUE",
                          H2.prefix="jdbc:h2:",username="sa",password="sa",...) {
   require(RH2)
@@ -64,9 +164,46 @@ nxt.dbConnect <- function(file="nxt/nxt_db/nxt.h2.db",H2.opts=";DB_CLOSE_ON_EXIT
   return(dbConnect(H2(...),uri,username,password))
 }
 
+
+#' Disconnect from NXT H2 database
+#' 
+#' Currently just a wrapper for \code{\link{dbDisconnect}}.
+#' 
+#' @param con H2 connection object
+#'   
+#' @return Boolean indicating success of operation
+#'   
+#' @seealso See also \code{\link{nxt.dbConnect}}
+#'   
+#' @author David M. Kaplan \email{dmkaplan2000@@gmail.com}
+#' @export
 nxt.dbDisconnect <- function(con)
   dbDisconnect(con)
 
+#' Generate a timeseries of creation of new NXT accounts
+#' 
+#' This function returns a timeseries of the number of new NXT accounts created 
+#' on each timestep since the genesis block.  Timestep is controlable, but 
+#' defaults to daily.
+#' 
+#' @param con Connection object to the NXT H2 database
+#' @param timestep Size of timestep to use for generating timeseries.  Can be a 
+#'   number of seconds for each timestep or "daily" (default), "weekly", 
+#'   "monthly" or "yearly".
+#' @param ts.from.db Boolean. If \code{TRUE} (default), convert timestamps to POSIXct,
+#'   otherwise keep them in seconds since genesis block.
+#'   
+#' @return A data.frame with the following columns:
+#' \item{TIMESTAMP}{Timestamp at the start of the timestep}
+#'
+#' \item{N_ACCOUNT}{Total number of NXT accounts existing at the end of the timestep}
+#'   
+#' \item{D_ACCOUNT}{Number of new NXT accounts created during the timestep}
+#'   
+#' @seealso See also \code{\link{nxt.dbConnect}}, \code{\link{nxt.convert.ts}} 
+#'   
+#' @author David M. Kaplan \email{dmkaplan2000@@gmail.com}
+#' @export
 nxt.newAccountsTimeSeries <- function(con,timestep="daily",ts.from.db=TRUE) {
   if (is.character(timestep)) {
     hr=60*60
@@ -98,6 +235,36 @@ ORDER BY TIMESTAMP
   return(newact)  
 }
 
+#' Get a set of blocks from the NXT blockchain
+#' 
+#' This function queries the NXT blockchain and returns a set of blocks meeting 
+#' a certain set of criteria.
+#' 
+#' @param con Connection object to the NXT H2 database.
+#' @param block.ids A vector of NXT block IDs to query for.
+#' @param generator.ids A vector of NXT account IDs to look for as the 
+#'   generators of the blocks.
+#' @param start.ts Minimum timestamp of block. Can be in seconds since genesis 
+#'   or POSIXct format.
+#' @param end.ts Maximum timestamp of block. Can be in seconds since genesis or 
+#'   POSIXct format.
+#' @param start.height Minimum block height.
+#' @param end.height Maximum block height.
+#' @param nonzero.fee Boolean. Defaults to \code{FALSE}. If \code{TRUE}, only 
+#'   return blocks that had transactions in them.
+#' @param ts.from.db Boolean. If \code{TRUE} (default), convert timestamps to 
+#'   POSIXct, otherwise keep them in seconds since genesis block.
+#' @param id.from.db Boolean. If \code{TRUE} (default), output block and account
+#'   IDs in canonical format, otherwise leave in signed long format.
+#'   
+#' @return A data.frame with exactly the same information as is found in the 
+#'   BLOCK table found in the NXT H2 database.
+#'   
+#' @seealso See also \code{\link{nxt.dbConnect}}, \code{\link{nxt.convert.ts}},
+#'   \code{\link{nxt.convert.id}}
+#'   
+#' @author David M. Kaplan \email{dmkaplan2000@@gmail.com}
+#' @export
 nxt.getBlocks <- function(con,block.ids=NULL,generator.ids=NULL,start.ts=NULL,end.ts=NULL,
                           start.height=NULL,end.height=NULL,nonzero.fee=FALSE,
                           ts.from.db=TRUE,id.from.db=TRUE) {
@@ -169,15 +336,69 @@ nxt.getBlocks <- function(con,block.ids=NULL,generator.ids=NULL,start.ts=NULL,en
   return(b)
 }
 
-nxt.getLastBlock <- function(con,nonzero.fee=FALSE) {
+#' Get last block from the NXT blockchain
+#' 
+#' This function queries the NXT blockchain and returns the most recent block.
+#' 
+#' @param con Connection object to the NXT H2 database.
+#' @param nonzero.fee Boolean. Defaults to \code{FALSE}. If \code{TRUE}, get
+#'   last block that had atleast one transaction.
+#' @param \dots Additional arguments for \code{\link{nxt.getBlocks}}, such as 
+#'   \code{ts.from.db} and \code{id.from.db}
+#'   
+#' @return A data.frame with exactly the same information as is found in the 
+#'   BLOCK table found in the NXT H2 database.
+#'   
+#' @seealso See also \code{\link{nxt.dbConnect}}, \code{\link{nxt.convert.ts}}, 
+#'   \code{\link{nxt.convert.id}}, \code{\link{nxt.getBlocks}}
+#'   
+#' @author David M. Kaplan \email{dmkaplan2000@@gmail.com}
+#' @export
+nxt.getLastBlock <- function(con,nonzero.fee=FALSE,...) {
   q="SELECT max(HEIGHT) FROM PUBLIC.BLOCK"
   if (nonzero.fee)
     paste(q,"WHERE TOTAL_FEE>0")
   
   h=dbGetQuery(con,q)
-  return(nxt.getBlocks(con,start.height=h,end.height=h))
+  return(nxt.getBlocks(con,start.height=h,end.height=h,...))
 }
 
+#' Get a set of transactions from the NXT blockchain
+#' 
+#' This function queries the NXT blockchain and returns a set of transactions 
+#' meeting a certain set of criteria.
+#' 
+#' @param con Connection object to the NXT H2 database.
+#' @param block.ids A vector of NXT block IDs to query for.
+#' @param sender.ids A vector with NXT IDs of senders of transactions.
+#' @param recipient.ids A vector with NXT IDs of recipients of transactions.
+#' @param start.ts Minimum timestamp of transaction. Can be in seconds since
+#'   genesis or POSIXct format.
+#' @param end.ts Maximum timestamp of transaction. Can be in seconds since
+#'   genesis or POSIXct format.
+#' @param start.height Minimum height of block corresponding to transaction.
+#' @param end.height Maximum height of block corresponding to transaction.
+#' @param types Transaction types to look for (e.g., 0 for payment, 1 for
+#'   messaging, etc.)
+#' @param subtypes Transaction subtypes to look for (e.g., types=1, subtypes=1
+#'   for alias assignments)
+#' @param min.amount Minimum transaction amount (in NXT).
+#' @param max.amount Maximum transaction amount (in NXT).
+#' @param min.fee Minimum transaction fee (in NXT).
+#' @param max.fee Maximum transaction fee (in NXT).
+#' @param ts.from.db Boolean. If \code{TRUE} (default), convert timestamps to 
+#'   POSIXct, otherwise keep them in seconds since genesis block.
+#' @param id.from.db Boolean. If \code{TRUE} (default), output block and account
+#'   IDs in canonical NXT format, otherwise leave in signed long format.
+#'   
+#' @return A data.frame with exactly the same information as is found in the 
+#'   TRANSACTION table found in the NXT H2 database.
+#'   
+#' @seealso See also \code{\link{nxt.dbConnect}}, \code{\link{nxt.convert.ts}}, 
+#'   \code{\link{nxt.convert.id}}
+#'   
+#' @author David M. Kaplan \email{dmkaplan2000@@gmail.com}
+#' @export
 nxt.getTransactions <- function(con,block.ids=NULL,sender.ids=NULL,recipient.ids=NULL,
                                 start.ts=NULL,end.ts=NULL,
                                 start.height=NULL,end.height=NULL,
@@ -281,12 +502,34 @@ nxt.getTransactions <- function(con,block.ids=NULL,sender.ids=NULL,recipient.ids
   return(b)
 }
 
-nxt.getBalances <- function(con,account.ids=NULL,end.ts=NULL,id.from.db=TRUE) {
+#' Get balances for a set of NXT accounts
+#' 
+#' This function queries the NXT blockchain and returns the NXT balance for a
+#' set of account IDs at a specifief time.
+#' 
+#' If an account ID is not found, it will not appear in the final data.frame.
+#' 
+#' @param con Connection object to the NXT H2 database.
+#' @param account.ids A vector with NXT IDs of accounts to calculate balances 
+#'   for.
+#' @param ts Timestamp at which to calculate balances. Can be in seconds since 
+#'   genesis or POSIXct format. Defaults to calculating balance over all 
+#'   transactions.
+#' @param id.from.db Boolean. If \code{TRUE} (default), output account IDs in 
+#'   canonical NXT format, otherwise leave in signed long format.
+#'   
+#' @return A data.frame with two columns: ACCOUNT_ID and BALANCE
+#'   
+#' @seealso See also \code{\link{nxt.dbConnect}}, \code{\link{nxt.convert.id}}
+#'   
+#' @author David M. Kaplan \email{dmkaplan2000@@gmail.com}
+#' @export
+nxt.getBalances <- function(con,account.ids=NULL,ts=NULL,id.from.db=TRUE) {
   w="WHERE TRUE"
   
-  if (!is.null(end.ts)) {
-    end.ts=nxt.convert.ts(end.ts,from.db=FALSE)
-    w=paste(w," AND TIMESTAMP<=",end.ts,sep="")
+  if (!is.null(ts)) {
+    ts=nxt.convert.ts(ts,from.db=FALSE)
+    w=paste(w," AND TIMESTAMP<=",ts,sep="")
   }
   
   i=c("SENDER_ID","RECIPIENT_ID","GENERATOR_ID")
@@ -332,6 +575,56 @@ nxt.getBalances <- function(con,account.ids=NULL,end.ts=NULL,id.from.db=TRUE) {
   return(cc)
 }
 
+#' Get a timeseries of transactions for a given set of account IDs
+#' 
+#' This function queries the NXT blockchain and returns an list of transactions,
+#' ordered by timestamp, including information about the type of transaction, 
+#' amounts, etc. for a set of account IDs.
+#' 
+#' @param con Connection object to the NXT H2 database.
+#' @param account.ids A vector with NXT IDs of accounts to look for.
+#' @param start.ts Minimum timestamp of transactions. Can be in seconds since 
+#'   genesis or POSIXct format.
+#' @param end.ts Maximum timestamp of transactions. Can be in seconds since 
+#'   genesis or POSIXct format.
+#' @param ts.from.db Boolean. If \code{TRUE} (default), convert timestamps to 
+#'   POSIXct, otherwise keep them in seconds since genesis block.
+#' @param id.from.db Boolean. If \code{TRUE} (default), output block and account
+#'   IDs in canonical NXT format, otherwise leave in signed long format.
+#' @param calc.balance Boolean. If \code{TRUE} (default), a running balance will
+#'   be calculated for all transactions. This will be the balance for all 
+#'   \code{account.ids} and will only reflect transactions occuring between 
+#'   \code{start.ts} and \code{end.ts}.
+#'   
+#' @return A data.frame with the following columns: \item{ACCOUNT_ID}{NXT 
+#'   account ID from list given in \code{account.ids}}
+#'   
+#'   \item{TIMESTAMP}{Timestamp of transaction}
+#'   
+#'   \item{TRANSACTION_ID}{NXT ID of transaction}
+#'   
+#'   \item{TRANSACTION_DIRECTION}{"SEND", "RECEIVE", or "FORGE"}
+#'   
+#'   \item{TRANSACTION_TYPE}{Integer indicating transaction type}
+#'   
+#'   \item{TRANSACTION_SUBTYPE}{Integer indicating transaction subtype}
+#'   
+#'   \item{OTHER_ACCOUNT_ID}{Any other NXT account ID relevant to transaction}
+#'   
+#'   \item{AMOUNT}{NXT amount of transaction with sign indicating impact on 
+#'   ACCOUNT_ID (e.g., negative for send transactions)}
+#'   
+#'   \item{FEE}{NXT fee for transaction with sign indicating impact on 
+#'   ACCOUNT_ID (e.g., positive for block forgine)}
+#'   
+#'   \item{BALANCE}{Cumsum of \code{AMOUNT+FEE} for all transaction (only if
+#'   \code{calc.balance=TRUE})}
+#'   
+#' @seealso See also \code{\link{nxt.dbConnect}}, \code{\link{nxt.convert.ts}}, 
+#'   \code{\link{nxt.convert.id}}
+#'   
+#' @author David M. Kaplan \email{dmkaplan2000@@gmail.com}
+#' @export
 nxt.getAccountsTimeSeries <- function(con,account.ids,start.ts=NULL,end.ts=NULL,
                                       ts.from.db=TRUE,id.from.db=TRUE,calc.balance=TRUE) {
   i=c("SENDER_ID","RECIPIENT_ID","GENERATOR_ID")
