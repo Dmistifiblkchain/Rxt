@@ -73,6 +73,8 @@ nxt.convert.ts <- function(ts,tz="UTC",from.db=length(grep("^(character|POSIX[lc
 #' converts IDs back and forth between unsigned and signed long using 
 #' \code{\link[gmp]{bigz}} objects from the gmp package.
 #' 
+#' For efficiency, results are always returned as character strings.
+#' 
 #' @param id a vector of NXT ids.  Can be of any type that can be converted to
 #'   \code{\link[gmp]{bigz}}.
 #' @param from.db Boolean. If true, try to convert \code{id} to canonical
@@ -80,19 +82,20 @@ nxt.convert.ts <- function(ts,tz="UTC",from.db=length(grep("^(character|POSIX[lc
 #'   signed long. By default, will try to automatically convert from the
 #'   presumed input format to the other.
 #'   
-#' @return A vector of IDs in the desired format.
+#' @return A vector of character strings containing the IDs in the desired format.
 #'   
 #' @seealso \code{\link[gmp]{bigz}}
 #'   
 #' @author David M. Kaplan \email{dmkaplan2000@@gmail.com}
 #' @export
-nxt.convert.id <- function(id,from.db={require(gmp); any(as.bigz(id)<0)}) {
+#' @import gmp
+nxt.convert.id <- function(id,from.db=any(as.bigz(id)<0)) {
   
   # The above default for from.db will try to automatically determine which direction we want to convert
   # If negative values, assume we want to go to standard NXT ID format
   # Otherwise, subtract 2^64 from any values larger than 2^63 (i.e., go to DB ID format)
 
-  require(gmp)
+  #require(gmp)
   n = as.bigz(2^63)
   id = as.bigz(id)
 
@@ -107,7 +110,7 @@ nxt.convert.id <- function(id,from.db={require(gmp); any(as.bigz(id)<0)}) {
     id[I] = id[I] - 2*n
   }
   
-  return(id)
+  return(as.character(id))
 }
 
 #' Make a connection to the NXT H2 database containing the blockchain
@@ -134,9 +137,10 @@ nxt.convert.id <- function(id,from.db={require(gmp); any(as.bigz(id)<0)}) {
 #'   
 #' @author David M. Kaplan \email{dmkaplan2000@@gmail.com}
 #' @export
+#' @import RH2
 nxt.dbConnect <- function(file="nxt/nxt_db/nxt.h2.db",H2.opts=";DB_CLOSE_ON_EXIT=FALSE;AUTO_SERVER=TRUE",
                          H2.prefix="jdbc:h2:",username="sa",password="sa",...) {
-  require(RH2)
+  #require(RH2)
   
   # Remove possible file extension
   file=sub("[.]h2[.]db$","",file) 
@@ -301,19 +305,10 @@ nxt.getBlocks <- function(con,block.ids=NULL,generator.ids=NULL,start.ts=NULL,en
   I = sapply(b,class)=="factor"
   b[,I] = sapply(b[,I],as.character)
   
-  # At least convert IDs to BIGZ
-  require(gmp)
-  bigint.cols = c("ID","PREVIOUS_BLOCK_ID","NEXT_BLOCK_ID","BASE_TARGET","GENERATOR_ID")
-  for(i in bigint.cols) b[,i] = as.bigz(b[,i])
-  
-  if (ts.from.db) {
-    b$TIMESTAMP = nxt.convert.ts(b$TIMESTAMP,from.db=TRUE)
-  }
+  b$TIMESTAMP = nxt.convert.ts(b$TIMESTAMP,from.db=ts.from.db)
 
-  if (id.from.db) {
-    id.cols = c("ID","PREVIOUS_BLOCK_ID","NEXT_BLOCK_ID","GENERATOR_ID")
-    for(i in id.cols) b[,i] = nxt.convert.id(b[,i],from.db=TRUE)
-  }
+  id.cols = c("ID","PREVIOUS_BLOCK_ID","NEXT_BLOCK_ID","GENERATOR_ID")
+  for(i in id.cols) b[,i] = nxt.convert.id(b[,i],from.db=id.from.db)
 
   row.names(b)=as.character(b$ID)
   
@@ -467,19 +462,10 @@ nxt.getTransactions <- function(con,block.ids=NULL,sender.ids=NULL,recipient.ids
   I = sapply(b,class)=="factor"
   b[,I] = sapply(b[,I],as.character)
   
-  # At least convert IDs to BIGZ
-  require(gmp)
-  bigint.cols = c("ID","RECIPIENT_ID","SENDER_ID","REFERENCED_TRANSACTION_ID","BLOCK_ID")
-  for(i in bigint.cols) b[,i] = as.bigz(b[,i])
+  b$TIMESTAMP = nxt.convert.ts(b$TIMESTAMP,from.db=ts.from.db)
   
-  if (ts.from.db) {
-    b$TIMESTAMP = nxt.convert.ts(b$TIMESTAMP,from.db=TRUE)
-  }
-  
-  if (id.from.db) {
-    id.cols = c("ID","RECIPIENT_ID","SENDER_ID","REFERENCED_TRANSACTION_ID","BLOCK_ID")
-    for(i in id.cols) b[,i] = nxt.convert.id(b[,i],from.db=TRUE)
-  }
+  id.cols = c("ID","RECIPIENT_ID","SENDER_ID","REFERENCED_TRANSACTION_ID","BLOCK_ID")
+  for(i in id.cols) b[,i] = nxt.convert.id(b[,i],from.db=id.from.db)
   
   row.names(b)=as.character(b$ID)
   
@@ -545,16 +531,15 @@ nxt.getBalances <- function(con,account.ids=NULL,ts=NULL,id.from.db=TRUE) {
   b$ACCOUNT_ID=nxt.convert.id(as.character(b$ACCOUNT_ID),from.db=id.from.db)
   
   if (is.null(account.ids)) {
-    row.names(b)=as.character(b$ACCOUNT_ID)  
+    row.names(b)=b$ACCOUNT_ID  
     return(b)
   }
   
   account.ids=nxt.convert.id(account.ids,from.db=id.from.db)
   cc=data.frame(ACCOUNT_ID=as.character(account.ids),BALANCE=0,
                 stringsAsFactors=FALSE)
-  row.names(cc)=as.character(account.ids)
-  cc[as.character(b$ACCOUNT_ID),"BALANCE"]=b$BALANCE
-  cc$ACCOUNT_ID = as.bigz(cc$ACCOUNT_ID)
+  row.names(cc)=account.ids
+  cc[b$ACCOUNT_ID,"BALANCE"]=b$BALANCE
   
   return(cc)
 }
@@ -668,19 +653,10 @@ nxt.getAccountsTimeSeries <- function(con,account.ids,start.ts=NULL,end.ts=NULL,
   I = sapply(b,class)=="factor"
   b[,I] = sapply(b[,I],as.character)
 
-  # At least convert IDs to BIGZ
-  require(gmp)
-  bigint.cols = c("ACCOUNT_ID","TRANSACTION_ID","OTHER_ACCOUNT_ID")
-  for(i in bigint.cols) b[,i] = as.bigz(b[,i])
+  b$TIMESTAMP = nxt.convert.ts(b$TIMESTAMP,from.db=ts.from.db)
   
-  if (ts.from.db) {
-    b$TIMESTAMP = nxt.convert.ts(b$TIMESTAMP,from.db=TRUE)
-  }
-  
-  if (id.from.db) {
-    id.cols = c("ACCOUNT_ID","TRANSACTION_ID","OTHER_ACCOUNT_ID")
-    for(i in id.cols) b[,i] = nxt.convert.id(b[,i],from.db=TRUE)
-  }
+  id.cols = c("ACCOUNT_ID","TRANSACTION_ID","OTHER_ACCOUNT_ID")
+  for(i in id.cols) b[,i] = nxt.convert.id(b[,i],from.db=id.from.db)
   
   if (calc.balance)
     b$BALANCE=cumsum(b$AMOUNT+b$FEE)
@@ -874,10 +850,6 @@ nxt.getAccountsStats <- function(con,account.ids=NULL,start.ts=NULL,end.ts=NULL,
   I = sapply(b,class)=="factor"
   b[,I] = sapply(b[,I],as.character)
   
-  # At least convert IDs to BIGZ
-  require(gmp)
-  b$ACCOUNT_ID = as.bigz(b$ACCOUNT_ID)
-  
   b$FIRST_ACT = apply(b[,c("FIRST_REC","FIRST_SEND","FIRST_FORGED")],1,min,na.rm=TRUE)
   b$LAST_ACT = apply(b[,c("LAST_REC","LAST_SEND","LAST_FORGED")],1,min,na.rm=TRUE)
 
@@ -890,10 +862,9 @@ nxt.getAccountsStats <- function(con,account.ids=NULL,start.ts=NULL,end.ts=NULL,
   }
   b$TIME_ACT = b$LAST_ACT - b$FIRST_ACT # Units depends on ts.from.db
   
-  if (id.from.db) {
-    b$ACCOUNT_ID = nxt.convert.id(b$ACCOUNT_ID,from.db=TRUE)
-  }
-  row.names(b)=as.character(b$ACCOUNT_ID)
+  b$ACCOUNT_ID = nxt.convert.id(b$ACCOUNT_ID,from.db=id.from.db)
+  
+  row.names(b)=b$ACCOUNT_ID
   
   if (calc.balance)
     b$BALANCE = b$NXT_REC - b$NXT_SENT - b$FEE_PAID + b$FEE_FORGED
@@ -904,41 +875,3 @@ nxt.getAccountsStats <- function(con,account.ids=NULL,start.ts=NULL,end.ts=NULL,
   return(b)
 }
 
-
-#' Converts hex strings to raw R objects
-#' 
-#' Converts hex strings (e.g., "ac6fef") to a \code{\link{raw}} R object
-#' 
-#' @param s Single hex string. Use \code{\link{apply}} or \code{\link{sapply}} 
-#'   to work with vectors of hex strings
-#'   
-#' @return Raw R object corresponding to hex string
-#'   
-#' @seealso \code{\link{raw}}, \code{\link{rawToChar}},
-#'   \code{\link{RawToHexString}}
-#'   
-#' @author David M. Kaplan \email{dmkaplan2000@@gmail.com}
-#' @export
-HexStringToRaw <- function(s) {
-  n = nchar(s)/2
-  x = raw(length=n)
-  for (k in 1:n) {
-    x[k] = as.raw(strtoi(substr(s,2*k-1,2*k),16L))
-  }
-  return(x)
-}
-
-#' Converts raw R objects to hex string
-#' 
-#' Converts a \code{\link{raw}} R object to a hex strings (e.g., "ac6fef")
-#' 
-#' @param x Object of type \code{\link{raw}}
-#'   
-#' @return Hex string corresponding to raw object
-#'   
-#' @seealso \code{\link{raw}}, \code{\link{rawToChar}},
-#'   \code{\link{HexStringToRaw}}
-#'   
-#' @author David M. Kaplan \email{dmkaplan2000@@gmail.com}
-#' @export
-RawToHexString <- function(x) { paste(as.character(x),collapse="") }

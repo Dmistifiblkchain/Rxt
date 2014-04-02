@@ -1,7 +1,7 @@
 Package: Rxt
 Type: Package
 Title: Functions for analyzing the H2 database containing the NXT blockchain
-Version: 0.1
+Version: 0.2
 Date: 2014-03-31
 Author: David M. Kaplan <dmkaplan2000@gmail.com>
 Maintainer: David M. Kaplan <dmkaplan2000@gmail.com>
