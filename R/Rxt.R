@@ -7,7 +7,7 @@
 #' the database with the AUTO_SERVER=TRUE option using the nxt.dbUrl property.
 #' 
 #' \tabular{ll}{ Package: \tab Rxt\cr Type: \tab Package\cr Version:
-#' \tab 0.1\cr Date: \tab 2014-03-31\cr License: \tab GPL (>= 2)\cr }
+#' \tab 0.2\cr Date: \tab 2014-04-02\cr License: \tab GPL (>= 2)\cr }
 #' 
 #' @author David M. Kaplan \email{dmkaplan2000@@gmail.com}
 #' 

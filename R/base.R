@@ -875,3 +875,121 @@ nxt.getAccountsStats <- function(con,account.ids=NULL,start.ts=NULL,end.ts=NULL,
   return(b)
 }
 
+#' Generate a timeseries of NXT transaction activity
+#' 
+#' This function returns a timeseries of the number of NXT transactions by type,
+#' amount of NXT transferred, fees paid, etc. on each timestep since the genesis
+#' block.  Timestep is controlable, but defaults to daily.
+#' 
+#' @param con Connection object to the NXT H2 database
+#' @param timestep Size of timestep to use for generating timeseries.  Can be a 
+#'   number of seconds for each timestep or "daily" (default), "weekly", 
+#'   "monthly" or "yearly".
+#' @param ts.from.db Boolean. If \code{TRUE} (default), convert timestamps to 
+#'   POSIXct, otherwise keep them in seconds since genesis block.
+#'   
+#' @return A data.frame with the following columns: \item{TIMESTAMP}{Timestamp 
+#'   at the start of the timestep}
+#'   
+#'   \item{N_TRANS}{Total number of transactions of all types per timestep}
+#'   
+#'   \item{NXT_SENT}{Amount of NXT sent per timestep}
+#'   
+#'   \item{FEE_PAID}{Total fees paid per timestep}
+#'   
+#'   \item{N_SEND}{Number of times NXT sent per timestep}
+#'   
+#'   \item{N_MESSAGE}{Number of messages sent per timestep}
+#'   
+#'   \item{N_ALIAS_ASSIGN}{Number of alias assignment transactions per 
+#'   timestemp}
+#'   
+#'   \item{N_COLORED_TRANS}{Number of colored coin transactions per timestep}
+#'   
+#'   \item{N_DIST_SENDER}{Number of distinct transaction sender accounts}
+#'   
+#'   \item{N_DIST_RECIP}{Number of distinct transaction recipient accounts}
+#'   
+#'   \item{N_BLOCK}{Number of blocks per timestep}
+#'   
+#'   \item{N_BLOCK_FEE}{Number of blocks with fee per timestep}
+#'   
+#'   \item{N_BLOCK_NOFEE}{Number of blocks without fee per timestep}
+#'   
+#'   \item{N_DIST_GENER}{Number of distinct block generators per timestep}
+#'   
+#'   \item{N_DIST_GENER_FEE}{Number of distinct block generators with fee per
+#'   timestep}
+#'   
+#'   \item{MEAN_BASE_TARGET}{Mean of base target}
+#'   
+#'   \item{MEAN_INV_TARGET}{Mean of 1.0/(base target)}
+#'   
+#'   \item{MIN_BASE_TARGET}{Minimum base target per timestep}
+#'   
+#'   \item{MAX_BASE_TARGET}{Maximum base target per timestep}
+#'   
+#' @seealso \code{\link{nxt.dbConnect}}, \code{\link{nxt.convert.ts}}
+#'   
+#' @author David M. Kaplan \email{dmkaplan2000@@gmail.com}
+#' @export
+nxt.getActivityTimeSeries <- function(con,timestep="daily",ts.from.db=TRUE) {
+  if (is.character(timestep)) {
+    hr=60*60
+    timestep=c(hourly=hr,daily=24*hr,weekly=7*24*hr,
+               monthly=30*24*hr,yearly=365*24*hr)[timestep]    
+  }
+  
+  q = paste("SELECT COALESCE(t.DATE,b.DATE) AS TIMESTAMP,
+              COALESCE(t.N_TRANS,0) AS N_TRANS, 
+              COALESCE(t.NXT_SENT,0) AS NXT_SENT, 
+              COALESCE(t.FEE_PAID,0) AS FEE_PAID,
+              COALESCE(t.N_SEND,0) AS N_SEND, 
+              COALESCE(t.N_MESSAGE,0) AS N_MESSAGE, 
+              COALESCE(t.N_ALIAS_ASSIGN,0) AS N_ALIAS_ASSIGN, 
+              COALESCE(t.N_COLORED_TRANS,0) AS N_COLORED_TRANS,
+              COALESCE(t.N_DIST_SENDER,0) AS N_DIST_SENDER, 
+              COALESCE(t.N_DIST_RECIP,0) AS N_DIST_RECIP,
+              b.N_BLOCK, b.N_BLOCK_FEE, b.N_BLOCK_NOFEE, 
+              b.N_DIST_GENER, b.N_DIST_GENER_FEE, b.MEAN_BASE_TARGET, 
+              b.MEAN_INV_TARGET, b.MIN_BASE_TARGET, b.MAX_BASE_TARGET
+              FROM
+                   (
+                   SELECT TIMESTAMP - (TIMESTAMP % (",
+                    format(timestep,digits=20),")) AS DATE,
+                   count(*) AS N_TRANS,
+                   sum(AMOUNT) AS NXT_SENT,
+                   sum(FEE) AS FEE_PAID,
+                   count(DISTINCT SENDER_ID) AS N_DIST_SENDER,
+                   count(DISTINCT RECIPIENT_ID) AS N_DIST_RECIP,
+                   sum(TYPE=0) AS N_SEND,
+                   sum(TYPE=1 AND SUBTYPE=0) AS N_MESSAGE,
+                   sum(TYPE=1 AND SUBTYPE=1) AS N_ALIAS_ASSIGN,
+                   sum(TYPE=2) AS N_COLORED_TRANS
+                   FROM PUBLIC.TRANSACTION
+                   GROUP BY DATE
+                   ) AS t RIGHT OUTER JOIN 
+                   (
+                   SELECT TIMESTAMP - (TIMESTAMP % (",
+                    format(timestep,digits=20),")) AS DATE,
+                   count(*) AS N_BLOCK,
+                   sum(TOTAL_FEE>0) AS N_BLOCK_FEE,
+                   sum(TOTAL_FEE=0) AS N_BLOCK_NOFEE,
+                   count(DISTINCT GENERATOR_ID) AS N_DIST_GENER,
+                   count(DISTINCT (CASE WHEN TOTAL_FEE>0 THEN GENERATOR_ID ELSE NULL END)) AS N_DIST_GENER_FEE,
+                   AVG(CAST(BASE_TARGET AS DOUBLE)) AS MEAN_BASE_TARGET,
+                   AVG(1.0/CAST(BASE_TARGET AS DOUBLE)) AS MEAN_INV_TARGET,
+                   MIN(BASE_TARGET) AS MIN_BASE_TARGET,
+                   MAX(BASE_TARGET) AS MAX_BASE_TARGET
+                   FROM PUBLIC.BLOCK
+                   GROUP BY DATE
+                   ) AS b ON t.DATE=b.DATE
+                   ORDER BY COALESCE(t.DATE,b.DATE)
+                   ")
+
+  act=dbGetQuery(con,q)
+  
+  act$TIMESTAMP = nxt.convert.ts(act$TIMESTAMP,from.db=ts.from.db)
+  
+  return(act)  
+}
