@@ -12,7 +12,9 @@ nxt.getAliases(con, alias.names = NULL, alias.uri = NULL,
   single regular expression character string of the sort
   recognized by an H2 database. To search for a single
   alias name use
-  \code{alias.names=c("ALIASNAME","ALIASNAME")}.}
+  \code{alias.names=c("ALIASNAME","ALIASNAME")}. Note:
+  alias names and regular expressions will be made lower
+  case before use.}
 
   \item{alias.uri}{A single regular expression character
   string of the sort recognized by an H2 database. Will

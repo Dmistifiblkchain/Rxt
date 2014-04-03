@@ -142,9 +142,10 @@ nxt.getMessages <- function(con,sender.ids=NULL,recipient.ids=NULL,
 #' 
 #' @param con Connection object to the NXT H2 database.
 #' @param alias.names Either a vector of alias names or a single regular 
-#'   expression character string of the sort recognized by an H2 database. To
-#'   search for a single alias name use
-#'   \code{alias.names=c("ALIASNAME","ALIASNAME")}.
+#'   expression character string of the sort recognized by an H2 database. To 
+#'   search for a single alias name use 
+#'   \code{alias.names=c("ALIASNAME","ALIASNAME")}. Note: alias names and regular
+#'   expressions will be made lower case before use.
 #' @param alias.uri A single regular expression character string of the sort 
 #'   recognized by an H2 database. Will match only valid assignment, not alias 
 #'   assignments before \code{ts}.
@@ -156,7 +157,8 @@ nxt.getMessages <- function(con,sender.ids=NULL,recipient.ids=NULL,
 #' @param id.from.db Boolean. If \code{TRUE} (default), output transaction and 
 #'   account IDs in canonical NXT format, otherwise leave in signed long format.
 #'   
-#' @return A data.frame containing aliases and info regarding when they were assigned.
+#' @return A data.frame containing aliases and info regarding when they were 
+#'   assigned.
 #'   
 #' @seealso \code{\link{nxt.dbConnect}}, \code{\link{nxt.convert.ts}}, 
 #'   \code{\link{nxt.convert.id}}
