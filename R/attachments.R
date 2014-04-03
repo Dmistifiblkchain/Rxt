@@ -174,11 +174,12 @@ nxt.getAliases <- function(con,alias.names=NULL,alias.uri=NULL,
   }
   
   if (!is.null(alias.names)) {
+    alias.names=tolower(alias.names)
     if (length(alias.names)==1) {
-      w=paste(w," AND a.NAME REGEXP '",alias.names,"'",sep="")
+      w=paste(w," AND LOWER(a.NAME) REGEXP '",alias.names,"'",sep="")
     } else {
       alias.names=paste(nxt.convert.id(alias.names,from.db=FALSE),collapse="'','")
-      w=paste(w," AND a.NAME IN ('",alias.names,"'')",sep="")
+      w=paste(w," AND LOWER(a.NAME) IN ('",alias.names,"'')",sep="")
     }
   }
   

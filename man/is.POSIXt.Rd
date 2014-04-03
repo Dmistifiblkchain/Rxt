@@ -17,4 +17,5 @@ Test if an object is of class POSIXct or POSIXlt or POSIXt
 \author{
 David M. Kaplan \email{dmkaplan2000@gmail.com}
 }
+\keyword{internal}
 
