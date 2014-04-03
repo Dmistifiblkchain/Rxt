@@ -13,6 +13,7 @@ nxt.genesis.ts <- as.POSIXct("2013-11-24 12:00:00",tz="UTC")
 #' @return Returns TRUE if object is of class POSIXct or POSIXlt or POSIXt
 #'   
 #' @author David M. Kaplan \email{dmkaplan2000@@gmail.com}
+#' @keywords internal
 is.POSIXt <- function(x)
   length(grep("^POSIX[lc]?t",class(x)))>0
 
